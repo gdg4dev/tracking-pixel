@@ -59,7 +59,14 @@ app.get('/icon/:trackingId', async (req, res) => {
     'Content-Length': '43',
   });
   res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-
+  mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/email-tracker', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 16000, 
+    socketTimeoutMS: 45000,  
+  })
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err));
   // Update email status if found
   const { trackingId } = req.params;
   if (trackingId) {
