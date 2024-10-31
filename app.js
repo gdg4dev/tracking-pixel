@@ -5,14 +5,36 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3500;
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/email-tracker', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 10000, 
-  socketTimeoutMS: 45000,  
-})
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+// MongoDB connection with connection pooling
+let cachedDb = null;
+
+async function connectToDatabase() {
+  if (cachedDb) {
+    return cachedDb;
+  }
+
+  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/email-tracker';
+  
+  try {
+    const client = await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: 1, // Optimize for serverless
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
+    });
+    
+    cachedDb = client.connection;
+    
+    cachedDb.on('error', (error) => {
+      console.error('MongoDB connection error:', error);
+      cachedDb = null;
+    });
+    
+    return cachedDb;
+  } catch (error) {
+    console.error('MongoDB connection failed:', error);
+    throw error;
+  }
+}
 
 const emailSchema = new mongoose.Schema({
   to: { type: String, required: true },
@@ -22,6 +44,7 @@ const emailSchema = new mongoose.Schema({
     type: String,
     enum: ['sent', 'bounced', 'opened'],
     default: 'sent',
+    index: true,
   },
   trackingId: {
     type: String,
@@ -35,20 +58,32 @@ const emailSchema = new mongoose.Schema({
     unique: true,
     index: true,
   },
-  sentAt: { type: Date, default: Date.now },
+  sentAt: { type: Date, default: Date.now, index: true },
   bounceDetails: { type: Object, default: {} },
   responseDetails: { type: Object, default: {} },
   metadata: {
-    ipAddress: { type: String, default: null },
-    userAgent: { type: String, default: null },
+    ipAddress: String,
+    userAgent: String,
     timestamp: { type: Date, default: Date.now },
     openCount: { type: Number, default: 0 },
   },
+}, {
+  timestamps: true,
 });
+
+emailSchema.index({ trackingId: 1, status: 1 });
 
 const Email = mongoose.model('Email', emailSchema);
 
-app.get('/ping', (req, res) => res.json({ success: true }));
+app.get('/ping', async (req, res) => {
+  try {
+    await connectToDatabase();
+    res.json({ success: true, timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Database connection failed' });
+  }
+});
+
 
 app.get('/icon/:trackingId', async (req, res) => {
   res.writeHead(200, {
@@ -59,37 +94,42 @@ app.get('/icon/:trackingId', async (req, res) => {
     'Content-Length': '43',
   });
   res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
-  mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/email-tracker', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 16000, 
-    socketTimeoutMS: 45000,  
-  })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch((err) => console.error('MongoDB connection error:', err));
-  // Update email status if found
+
   const { trackingId } = req.params;
   if (trackingId) {
     try {
-      await Email.findOneAndUpdate(
+      await connectToDatabase();
+      const updateResult = await Email.findOneAndUpdate(
         { trackingId },
         {
-          status: 'opened',
-          responseDetails: {
-            timestamp: new Date(),
-            userAgent: req.headers['user-agent'] || 'unknown',
-            ip: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+          $set: {
+            status: 'opened',
+            'responseDetails.lastOpened': new Date(),
+            'responseDetails.userAgent': req.headers['user-agent'] || 'unknown',
+            'responseDetails.ip': req.ip || req.headers['x-forwarded-for'] || 'unknown',
           },
           $inc: { 'metadata.openCount': 1 },
         },
-        { new: true }
-      );
+        { 
+          new: true,
+          maxTimeMS: 5000, 
+        }
+      ).lean();
+
+      if (!updateResult) {
+        console.warn(`No email found for trackingId: ${trackingId}`);
+      }
     } catch (error) {
-      console.error('Error updating tracking status:', error);
+      console.error('Error updating tracking status:', {
+        trackingId,
+        error: error.message,
+        stack: error.stack
+      });
     }
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Development server running on port ${PORT}`);
+  });
+
