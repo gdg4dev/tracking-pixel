@@ -18,7 +18,7 @@ const emailSchema = new mongoose.Schema({
   body: { type: String, required: true },
   status: {
     type: String,
-    enum: ['sent', 'bounced', 'responded'],
+    enum: ['sent', 'bounced', 'opened'],
     default: 'sent',
   },
   trackingId: {
@@ -65,7 +65,7 @@ app.get('/icon/:trackingId', async (req, res) => {
       await Email.findOneAndUpdate(
         { trackingId },
         {
-          status: 'responded',
+          status: 'opened',
           responseDetails: {
             timestamp: new Date(),
             userAgent: req.headers['user-agent'] || 'unknown',
