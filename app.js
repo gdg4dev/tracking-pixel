@@ -10,7 +10,6 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/email-tra
   useUnifiedTopology: true,
   serverSelectionTimeoutMS: 10000, 
   socketTimeoutMS: 45000,  
-  autoReconnect: true,   
 })
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
