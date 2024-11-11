@@ -115,6 +115,33 @@ emailSchema.index({ trackingId: 1, status: 1 });
 
 const Email = mongoose.model('Email', emailSchema);
 
+function realIP(request, cfProxy = false) {
+  const headers = request.headers;
+  const FALLBACK_IP_ADDRESS = '0.0.0.0';
+
+  if (cfProxy && headers['cf-connecting-ip']) {
+    return headers['cf-connecting-ip'];
+  }
+
+  if (headers['x-real-ip']) {
+    return headers['x-real-ip'];
+  }
+
+  if (headers['x-forwarded-for']) {
+    return headers['x-forwarded-for'].split(',')[0].trim();
+  }
+
+  if (headers['x-vercel-forwarded-for']) {
+    return headers['x-vercel-forwarded-for'];
+  }
+
+  if (headers['x-vercel-proxied-for']) {
+    return headers['x-vercel-proxied-for'];
+  }
+
+  return request.ip ?? FALLBACK_IP_ADDRESS;
+}
+
 // Tracking pixel endpoint with proper cursor handling
 app.get('/icon/:trackingId', async (req, res) => {
   const startTime = Date.now();
@@ -133,41 +160,14 @@ app.get('/icon/:trackingId', async (req, res) => {
   if (!trackingId) return;
 
   let session = null;
-  const FALLBACK_IP_ADDRESS = '0.0.0.0';
 
-  function realIP(request, cfProxy = false) {
-    const headers = request.headers;
-  
-
-    if (cfProxy && headers.has('cf-connecting-ip')) {
-      return headers.get('cf-connecting-ip');
-    }
-  
-    if (headers.has('x-real-ip')) {
-      return headers.get('x-real-ip');
-    }
-  
-    if (headers.has('x-forwarded-for')) {
-      return headers.get('x-forwarded-for');
-    }
-  
-    if (headers.has('x-vercel-forwarded-for')) {
-      return headers.get('x-vercel-forwarded-for');
-    }
-  
-    if (headers.has('x-vercel-proxied-for')) {
-      return headers.get('x-vercel-proxied-for');
-    }
-  
-    return request.ip ?? FALLBACK_IP_ADDRESS;
-  }
   try {
     const conn = await connectToDatabase();
     session = await conn.startSession();
 
     await session.withTransaction(async () => {
       const userAgent = req.headers['user-agent'] || 'unknown';
-      const ip = await realIP(req, true);
+      const ip = realIP(req, true);
       const timestamp = new Date();
 
       const updateResult = await Email.findOneAndUpdate(
@@ -223,7 +223,6 @@ app.get('/ping', (req, res) => {
   });
 });
 
-
 app.listen(PORT, () => {
-	console.log(`Development server running on port ${PORT}`);
+  console.log(`Development server running on port ${PORT}`);
 });
