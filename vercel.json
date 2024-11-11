@@ -13,5 +13,13 @@
         "Access-Control-Allow-Origin": "*"
       }
       }
+    ],
+    "headers": [
+      {
+        "source": "/(.*)",
+        "headers": [
+          { "key": "CF-Connecting-IP", "value": "{cf-connecting-ip}" }
+        ]
+      }
     ]
   }
