@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', true);
+
 const PORT = process.env.PORT || 3500;
 
 // Cached connection handling
@@ -138,7 +140,7 @@ app.get('/icon/:trackingId', async (req, res) => {
 
     await session.withTransaction(async () => {
       const userAgent = req.headers['user-agent'] || 'unknown';
-      const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+      const ip = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || 'unknown';
       const timestamp = new Date();
 
       const updateResult = await Email.findOneAndUpdate(
